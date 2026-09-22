@@ -73,5 +73,9 @@
   "VersionControl": "{6be84f44-74e4-4e5f-aee9-1b930f431375}",
   "WorkItemEditor": "{2138d120-456d-425e-80b5-88d2401fca23}",
   "PackageManifestEditor": "{3f27d653-86e6-4a04-adb6-a35efa6c8f05}",
-  "WebEditor": "{75a05685-00a8-4ded-bae5-e7a50bfa929a}"
+  "WebEditor": "{75a05685-00a8-4ded-bae5-e7a50bfa929a}",
+  "Shell": "{73708ded-2d56-4aad-b8eb-73b20d3f4bff}",
+  "ShellInternal": "{5af241b7-5627-4d12-bfb1-2b67d11127d7}",
+  "EditorOverride": "{656339d7-0e39-43e2-98aa-becc3f87ffa5}",
+  "ThemeVsix Editor": "{6c1f2a9e-4b7d-4e3a-9f51-8d2c7a0b3e64}"
 }

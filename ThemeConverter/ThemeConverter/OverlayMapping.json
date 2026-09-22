@@ -31,16 +31,20 @@
     "Item1": 1.0,
     "Item2": "editor.background"
   },
+  "editor.findMatchHighlightBackground": {
+    "Item1": 0.8,
+    "Item2": "editor.background"
+  },
   "editor.selectionHighlightBackground": {
-    "Item1": 1.0,
+    "Item1": 0.8,
     "Item2": "editor.background"
   },
   "editor.wordHighlightStrongBackground": {
-    "Item1": 1.0,
+    "Item1": 0.8,
     "Item2": "editor.background"
   },
   "editor.wordHighlightBackground": {
-    "Item1": 1.0,
+    "Item1": 0.8,
     "Item2": "editor.background"
   },
   "minimapSlider.background": {

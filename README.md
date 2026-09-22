@@ -55,6 +55,23 @@ This section describes how you can create a VSIX with the converted theme for pu
 11. Edit other fields in the vsixmanifest as desired (author, version, company, etc).
 12. Build solution and you now have a vsix in the output folder! Your new theme is most compatible with Visual Studio 2022.
 
+### Visual Studio 2026 (version 18)
+Visual Studio 18 draws its window chrome from Fluent colour tokens (the `Shell` and `ShellInternal` categories) and redirects the older `Environment` surface colours, such as `ToolWindowBackground`, to them. The converter emits those tokens from `ShellMappings.json`, where each token lists a fallback chain of VS Code keys.
+
+- `type` may be `dark`, `light`, `hcDark` (`hc-black`) or `hcLight` (`hc-light`); high-contrast themes fall back to the Dark or Light theme accordingly. Any other value is an error.
+- The theme id is derived from the theme name, so converting a theme again keeps its id and Visual Studio keeps it selected. `-g <guid>` registers a specific id instead.
+- Syntax classifications the theme has no rule for (`SyntaxDefaults.json`) are resolved the way VS Code resolves them, against the theme's `tokenColors`, falling back to `editor.foreground`, instead of inheriting the fallback theme's colours.
+- Each conversion also writes `<theme>.audit.txt`, listing text/background pairs below 3:1 contrast.
+- `ShellMappings.json` is tuned for dark themes: its lighter and darker shades mix towards white and black respectively.
+
+`tools\build-theme-vsix.ps1` converts a theme and packages it as a per-user VSIX in one step, with no Visual Studio project to set up:
+
+```powershell
+tools\build-theme-vsix.ps1 -Theme C:\myTheme\TestTheme.json -Version 1.0.0 -Publisher "Your Name" -License C:\myTheme\LICENSE.txt
+```
+
+The VSIX (`dist\<theme>.vsix`) also carries a small editor component that is active only while its own theme is selected. Visual Studio draws the text selection at a fixed 40% opacity, never recolours selected text outside Windows high contrast, and draws a single caret in the Plain Text colour; the component paints the selection opaque, colours selected text with `editor.selectionForeground`, and draws the caret in `editorCursor.foreground`, as VS Code does. `-License` packages the source theme's licence, which MIT and similar licences require to ship with copies. Building the VSIX needs the Visual Studio extension development workload; installing it does not.
+
 ### Removing a converted theme from VS
 1. Open target VS and switch to some theme that will not be deleted (like Blue theme).
 2. Go to `<vs_install_dir>\Common7\IDE\CommonExtensions\Platform`. e.g: `C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Platform`

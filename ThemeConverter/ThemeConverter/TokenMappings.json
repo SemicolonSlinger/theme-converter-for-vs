@@ -1,6 +1,36 @@
 {
   "tokenColors": [
     {
+      "VSC Token": "editorIndentGuide.background1",
+      "VS Token": [
+        "Text Editor MEF Items&Block Structure Adornments&Background"
+      ]
+    },
+    {
+      "VSC Token": "editorBracketHighlight.foreground1",
+      "VS Token": [
+        "Text Editor MEF Items&brace pair level one&Foreground"
+      ]
+    },
+    {
+      "VSC Token": "editorBracketHighlight.foreground2",
+      "VS Token": [
+        "Text Editor MEF Items&brace pair level two&Foreground"
+      ]
+    },
+    {
+      "VSC Token": "editorBracketHighlight.foreground3",
+      "VS Token": [
+        "Text Editor MEF Items&brace pair level three&Foreground"
+      ]
+    },
+    {
+      "VSC Token": "editorBracketHighlight.unexpectedBracket.foreground",
+      "VS Token": [
+        "Text Editor MEF Items&mismatched brace&Foreground"
+      ]
+    },
+    {
       "VSC Token": "comment.block.documentation",
       "VS Token": [
         "Text Editor Language Service Items&Comment",
@@ -441,6 +471,7 @@
     {
       "VSC Token": "titleBar.activeBackground",
       "VS Token": [
+        "Environment&TitleBarActive&Background",
         "Cider&AnimationRecordingOff&Background",
         "Cider&AnimationRecordingOn&Background",
         "Cider&ComboBoxDisabled&Background",
@@ -542,7 +573,6 @@
         "Environment&MainWindowButtonInactiveGlyph&Background",
         "Environment&MainWindowInactiveCaption&Foreground",
         "Environment&ToolWindowFloatingFrame&Foreground",
-        "Environment&TitleBarActive&Background"
       ]
     },
     {
@@ -1024,8 +1054,6 @@
         "NewProjectDialog&CheckBoxMouseOver&Background",
         "NewProjectDialog&ContentSelectedBorder&Background",
         "NewProjectDialog&InputFocusBorder&Background",
-        "Output Window&OutputError&Foreground",
-        "Output Window&OutputHeading&Foreground",
         "Output Window&Plain Text&Background",
         "ProjectDesigner&SelectedCategoryTab&Background",
         "SharePointTools&DesignerMouseOverTab&Background",
@@ -1147,6 +1175,7 @@
     {
       "VSC Token": "editor.background",
       "VS Token": [
+        "WebClient Diagnostic Tools&Plain Text&Background",
         "ACDCOverview&Body&Background",
         "ACDCOverview&NumberedListItem&Background",
         "Cider&ArtboardBackground&Background",
@@ -1187,7 +1216,6 @@
         "PackageManifestEditor&EditorContent&Foreground",
         "Roslyn Text Editor MEF Items&punctuation&Foreground",
         "Text Editor Text Manager Items&Plain Text&Foreground",
-        "WebClient Diagnostic Tools&Plain Text&Background"
       ]
     },
     {
@@ -1875,6 +1903,7 @@
     {
       "VSC Token": "editor.findMatchHighlightBackground",
       "VS Token": [
+        "Text Editor MEF Items&MarkerFormatDefinition/FindHighlight&Background"
       ]
     },
     {
@@ -1934,6 +1963,10 @@
     {
       "VSC Token": "editor.selectionBackground",
       "VS Token": [
+        "Immediate Window&Selected Text&Background",
+        "Immediate Window&Selected Text in High Contrast&Background",
+        "Find Results&Selected Text&Background",
+        "Find Results&Selected Text in High Contrast&Background",
         "Text Editor Text Manager Items&Selected Text&Background",
         "Text Editor MEF Items&Selected Text&Background",
       ]
@@ -1941,6 +1974,7 @@
     {
       "VSC Token": "editor.selectionHighlightBackground",
       "VS Token": [
+        "Text Editor MEF Items&Matched Selected Text&Background"
       ]
     },
     {
@@ -1989,6 +2023,8 @@
     {
       "VSC Token": "editorCursor.foreground",
       "VS Token": [
+        "Text Editor MEF Items&Caret (Primary)&Foreground",
+        "Text Editor MEF Items&Caret (Secondary)&Foreground"
       ]
     },
     {
@@ -2113,6 +2149,7 @@
     {
       "VSC Token": "editorLineNumber.activeForeground",
       "VS Token": [
+        "Text Editor MEF Items&Selected Line Number&Foreground"
       ]
     },
     {
@@ -2302,6 +2339,7 @@
     {
       "VSC Token": "errorForeground",
       "VS Token": [
+        "Output Window&OutputError&Foreground",
       ]
     },
     {
@@ -2337,6 +2375,7 @@
     {
       "VSC Token": "foreground",
       "VS Token": [
+        "Output Window&OutputHeading&Foreground",
         "Cider&ArtboardDistance&Foreground",
         "Cider&ArtboardDistanceSelected&Foreground",
         "Cider&ArtboardElement&Foreground",
@@ -2374,10 +2413,6 @@
         "Environment&StartPageTextHeadingMouseOver&Background",
         "Environment&StartPageTextSubHeading&Background",
         "Environment&StartPageTextSubHeadingMouseOver&Background",
-        "Find Results&Selected Text in High Contrast&Background",
-        "Find Results&Selected Text&Background",
-        "Immediate Window&Selected Text in High Contrast&Background",
-        "Immediate Window&Selected Text&Background",
         "Locals&SelectedText&Foreground",
         "PackageManifestEditor&CheckBox&Foreground",
         "PackageManifestEditor&CheckBoxMouseOver&Foreground",
@@ -4012,6 +4047,7 @@
     {
       "VSC Token": "editor.findMatchHighlightBorder",
       "VS Token": [
+        "Text Editor MEF Items&MarkerFormatDefinition/FindHighlight&Foreground"
       ]
     },
     {
@@ -4027,7 +4063,8 @@
     {
       "VSC Token": "editor.selectionForeground",
       "VS Token": [
-        "Text Editor MEF Items&outlining.collapsehintadornment&Foreground"
+        "Text Editor MEF Items&outlining.collapsehintadornment&Foreground",
+        "Text Editor MEF Items&Selected Text in High Contrast&Foreground"
       ]
     },
     {

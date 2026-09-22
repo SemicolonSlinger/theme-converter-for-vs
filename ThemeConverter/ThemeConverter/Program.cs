@@ -22,7 +22,7 @@ namespace ThemeConverter
         {
             try
             {
-                string inputPath = null, outputPath = null, targetVS = null;
+                string inputPath = null, outputPath = null, targetVS = null, themeId = null;
                 bool showHelp = false;
 
                 var options = new OptionSet()
@@ -30,6 +30,7 @@ namespace ThemeConverter
                     {"i|input=", Resources.Input, i => inputPath = i },
                     {"o|output=", Resources.Output, o => outputPath = o },
                     {"t|targetVS=", Resources.TargetVS, t => targetVS = t },
+                    {"g|guid=", "Theme id to register (default: derived from the theme name).", g => themeId = g },
                     {"h|help",  Resources.Help, h => showHelp = h != null},
                 };
 
@@ -59,7 +60,7 @@ namespace ThemeConverter
                     throw new ApplicationException(String.Format(CultureInfo.CurrentUICulture, Resources.TargetVSNotExistException, targetVS));
                 }
 
-                Convert(inputPath, outputPath, targetVS);
+                Convert(inputPath, outputPath, targetVS, themeId is null ? null : Guid.Parse(themeId));
 
                 return 0;
             }
@@ -81,7 +82,7 @@ namespace ThemeConverter
             return Directory.Exists(path) || File.Exists(path);
         }
 
-        private static void Convert(string sourcePath, string pkgdefOutputPath, string deployInstall)
+        private static void Convert(string sourcePath, string pkgdefOutputPath, string deployInstall, Guid? themeId)
         {
             var sourceFiles = Directory.Exists(sourcePath)
                 ? Directory.EnumerateFiles(sourcePath, "*.json")
@@ -92,12 +93,17 @@ namespace ThemeConverter
                 throw new ApplicationException(Resources.NoJSONFoundException);
             }
 
+            if (themeId.HasValue && sourceFiles.Skip(1).Any())
+            {
+                throw new ApplicationException("--guid names one theme; pass a single input file.");
+            }
+
             foreach (var sourceFile in sourceFiles)
             {
                 Console.WriteLine($"Converting {sourceFile}");
                 Console.WriteLine();
 
-                string pkgdefFilePath = Converter.ConvertFile(sourceFile, pkgdefOutputPath);
+                string pkgdefFilePath = Converter.ConvertFile(sourceFile, pkgdefOutputPath, themeId);
                 if (!string.IsNullOrEmpty(deployInstall))
                 {
                     string deployFilePath = Path.Combine(deployInstall, PathToVSThemeFolder, Path.GetFileName(pkgdefFilePath));

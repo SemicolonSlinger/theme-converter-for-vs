@@ -126,6 +126,83 @@ namespace ThemeConverterTests
             ConvertAndValidateCompleteTheme("Complete_Light.json", LightThemeFallback);
         }
 
+        [Theory]
+        [InlineData("dark", DarkThemeFallback)]
+        [InlineData("hcDark", DarkThemeFallback)]
+        [InlineData("hc-black", DarkThemeFallback)]
+        [InlineData("vs-dark", DarkThemeFallback)]
+        [InlineData("light", LightThemeFallback)]
+        [InlineData("hcLight", LightThemeFallback)]
+        [InlineData("hc-light", LightThemeFallback)]
+        [InlineData("vs", LightThemeFallback)]
+        [InlineData(null, LightThemeFallback)]
+        public void FallbackFollowsThemeType(string themeType, string expectedFallback)
+        {
+            Converter.ResolveFallbackId(themeType).ToString("B").Should().Be(expectedFallback);
+        }
+
+        [Fact]
+        public void UnknownThemeTypeIsRejected()
+        {
+            Action resolve = () => Converter.ResolveFallbackId("sepia");
+            resolve.Should().Throw<ApplicationException>();
+        }
+
+        [Fact]
+        public void ThemeIdIsNameBasedUuid()
+        {
+            // Reference values from Python's uuid.uuid5 with the converter's namespace.
+            Converter.ThemeIdFromName("naysayer88").Should().Be(new Guid("17ac31bf-27bc-5578-8519-acd166d275ee"));
+            Converter.ThemeIdFromName("Complete_Dark").Should().Be(new Guid("bf7c191b-2dc7-554d-95c7-0c011e26578c"));
+        }
+
+        [Theory]
+        [InlineData("comment.block.documentation entity.name.tag", "#111111")]
+        [InlineData("string.quoted constant.character.escape", "#333333")]
+        [InlineData("string.quoted variable.other.readwrite", "#444444")]
+        [InlineData("variable.other.readwrite", "#555555")]
+        [InlineData("keyword.control.flow", "#222222")]
+        [InlineData("keyword.operator", null)]
+        [InlineData("keywordx", null)]
+        public void ScopeResolvesLikeTextMate(string scopePath, string expected)
+        {
+            var theme = Newtonsoft.Json.Linq.JObject.Parse(@"{
+                ""type"": ""dark"",
+                ""colors"": {},
+                ""tokenColors"": [
+                    { ""scope"": ""comment"",                   ""settings"": { ""foreground"": ""#111111"" } },
+                    { ""scope"": [""keyword.control"", ""string""], ""settings"": { ""foreground"": ""#999999"" } },
+                    { ""scope"": ""keyword.control"",           ""settings"": { ""foreground"": ""#222222"" } },
+                    { ""scope"": ""string"",                    ""settings"": { ""foreground"": ""#333333"" } },
+                    { ""scope"": ""string variable.other"",     ""settings"": { ""foreground"": ""#444444"" } },
+                    { ""scope"": ""variable.other"",            ""settings"": { ""foreground"": ""#555555"" } }
+                ]
+            }").ToObject<ThemeFileContract>();
+
+            Converter.MatchScope(theme!, scopePath).Should().Be(expected);
+        }
+
+        [Fact]
+        public void ExplicitThemeIdIsRegistered()
+        {
+            var themeId = new Guid("f34e238e-da21-4c85-917a-cc68c561860d");
+            string pkgdefPath = Converter.ConvertFile(Path.Combine(ThemesFolderPath, "Complete_Dark.json"), Path.Combine(ResultsFolderPath, "explicit"), themeId);
+
+            File.ReadAllLines(pkgdefPath)[0].Should().Be($"[$RootKey$\\Themes\\{themeId:B}]");
+        }
+
+        [Fact]
+        public void Complete_Dark_EmitsFluentCategories()
+        {
+            string pkgdefPath = ConvertTheme("Complete_Dark.json");
+            string[] lines = File.ReadAllLines(pkgdefPath);
+
+            string themeGuid = ValidateGeneralThemeInformation(lines, "Complete_Dark", DarkThemeFallback);
+            themeGuid.Should().Be(Converter.ThemeIdFromName("Complete_Dark").ToString("B"));
+            ValidateThemeCategories(lines, themeGuid, new[] { "Shell", "ShellInternal", "EditorOverride" });
+            File.Exists(Path.Combine(ResultsFolderPath, "Complete_Dark.audit.txt")).Should().BeTrue();
+        }
+
         private static void ConvertAndValidateCompleteTheme(string testFileName, string themeFallbackGuid)
         {
             string pkgdefPath = ConvertTheme(testFileName);

@@ -22,16 +22,80 @@ namespace ThemeConverter
         private static Lazy<Dictionary<string, string>> CategoryGuids = new Lazy<Dictionary<string, string>>(ParseMapping.CreateCategoryGuids());
         private static Lazy<Dictionary<string, string>> VSCTokenFallback = new Lazy<Dictionary<string, string>>(ParseMapping.CreateVSCTokenFallback());
         private static Lazy<Dictionary<string, (float, string)>> OverlayMappings = new Lazy<Dictionary<string, (float, string)>>(ParseMapping.CreateOverlayMapping());
+        private static Lazy<JObject> ShellMappings = new Lazy<JObject>(() => JObject.Parse(File.ReadAllText("ShellMappings.json")));
+        private static Lazy<JObject> SyntaxDefaults = new Lazy<JObject>(() => JObject.Parse(File.ReadAllText("SyntaxDefaults.json")));
+
+        // Name-based theme ids live in this namespace, so re-converting a theme keeps its id.
+        private static readonly Guid ThemeIdNamespace = new Guid("{b0f3b6f1-6c1b-4f7e-9a53-2f0c1a7e4d10}");
+
+        // Fonts & Colors categories store COLORREFs, which drop alpha: translucent colours are
+        // composited onto the first resolvable base before they are written.
+        private static readonly Dictionary<string, string[]> FontAndColorBases = new Dictionary<string, string[]>
+        {
+            ["Text Editor Text Manager Items"] = new[] { "editor.background" },
+            ["Text Editor Language Service Items"] = new[] { "editor.background" },
+            ["Text Editor Text Marker Items"] = new[] { "editor.background" },
+            ["Text Editor MEF Items"] = new[] { "editor.background" },
+            ["Roslyn Text Editor MEF Items"] = new[] { "editor.background" },
+            ["Cpp Text Editor MEF Items"] = new[] { "editor.background" },
+            ["WebEditor"] = new[] { "editor.background" },
+            ["Find Results"] = new[] { "editor.background" },
+            ["Folder Difference"] = new[] { "editor.background" },
+            ["Performance Tips"] = new[] { "editor.background" },
+            ["Locals"] = new[] { "editor.background" },
+            ["Autos"] = new[] { "editor.background" },
+            ["Watch"] = new[] { "editor.background" },
+            ["CodeSense"] = new[] { "editor.background" },
+            ["Output Window"] = new[] { "panel.background", "editor.background" },
+            ["Immediate Window"] = new[] { "panel.background", "editor.background" },
+            ["Command Window"] = new[] { "panel.background", "editor.background" },
+            ["Package Manager Console"] = new[] { "panel.background", "editor.background" },
+            ["Editor Tooltip"] = new[] { "editorHoverWidget.background", "editorWidget.background", "editor.background" },
+        };
+
+        // Text/background pairs checked by the contrast audit, as "Category&Name" of the emitted theme.
+        private static readonly (string Text, string Background)[] AuditPairs =
+        {
+            ("Shell&TextFillPrimary", "Shell&SolidBackgroundFillBase"),
+            ("Shell&TextFillPrimary", "Shell&SolidBackgroundFillSecondary"),
+            ("Shell&TextFillPrimary", "Shell&SolidBackgroundFillTertiary"),
+            ("Shell&TextFillPrimary", "Shell&SolidBackgroundFillQuaternary"),
+            ("Shell&TextFillPrimary", "Shell&SurfaceBackgroundFillDefault"),
+            ("Shell&TextFillPrimary", "ShellInternal&EnvironmentBackground"),
+            ("Shell&TextFillPrimary", "ShellInternal&EnvironmentHeader"),
+            ("Shell&TextFillSecondary", "Shell&SolidBackgroundFillTertiary"),
+            ("Shell&TextFillSecondary", "Shell&SolidBackgroundFillQuaternary"),
+            ("Shell&TextFillSecondary", "ShellInternal&EnvironmentBackground"),
+            ("Shell&TextFillTertiary", "Shell&SolidBackgroundFillTertiary"),
+            ("Shell&AccentTextFillPrimary", "Shell&SolidBackgroundFillTertiary"),
+            ("Shell&TextOnAccentFillPrimary", "Shell&AccentFillDefault"),
+            ("Shell&HyperlinkFillPrimary", "Shell&SolidBackgroundFillTertiary"),
+            ("ShellInternal&EnvironmentBodyText", "ShellInternal&EnvironmentBody"),
+            ("ShellInternal&StatusBarTextFillRest", "ShellInternal&StatusBarBackgroundFillRest"),
+            ("ShellInternal&StatusBarTextFillDebugging", "ShellInternal&StatusBarBackgroundFillDebugging"),
+            ("ShellInternal&StatusBarTextFillBuilding", "ShellInternal&StatusBarBackgroundFillBuilding"),
+            ("ShellInternal&StatusBarTextFillSolutionLoading", "ShellInternal&StatusBarBackgroundFillSolutionLoading"),
+            ("EditorOverride&PopupText", "EditorOverride&PopupBackground"),
+            ("EditorOverride&PopupSubtleText", "EditorOverride&PopupBackground"),
+            ("EditorOverride&PopupHyperlink", "EditorOverride&PopupBackground"),
+            ("EditorOverride&PopupSelectedText", "EditorOverride&PopupSelectedBackground"),
+            // The integrated terminal paints ToolWindowText on the redirected ToolWindowBackground.
+            ("Environment&ToolWindowText", "Shell&SolidBackgroundFillTertiary"),
+        };
+
+        private const double MinimumContrast = 3.0;
 
         /// <summary>
         /// Convert the theme file and patch the pkgdef to the target VS if specified.
         /// </summary>
         /// <param name="themeJsonFilePath">The VS Code theme json file path.</param>
         /// <param name="pkgdefOutputPath">Output folder path to write the .pkgdef file to.</param>
+        /// <param name="themeId">Theme id to register; derived from the theme name when null.</param>
         /// <returns>
         /// Full path to the theme .pkgdef file created in the <paramref name="pkgdefOutputPath"/> folder.
+        /// A contrast report, &lt;theme&gt;.audit.txt, is written beside it.
         /// </returns>
-        public static string ConvertFile(string themeJsonFilePath, string pkgdefOutputPath)
+        public static string ConvertFile(string themeJsonFilePath, string pkgdefOutputPath, Guid? themeId = null)
         {
             string themeName = Path.GetFileNameWithoutExtension(themeJsonFilePath);
 
@@ -64,11 +128,16 @@ namespace ThemeConverter
             if (theme == null)
                 throw new Exception("Failed to get theme object.");
 
+            Guid fallbackId = ResolveFallbackId(theme.Type);
+
             // Group colors by category.
             var colorCategories = GroupColorsByCategory(theme);
+            AddShellColors(theme, colorCategories);
+            AddSyntaxDefaults(theme, colorCategories);
+            FlattenFontAndColorCategories(theme, colorCategories);
 
             // Compile VS theme.
-            string tempPkgdefFilePath = CompileVsTheme(themeName, theme, colorCategories);
+            string tempPkgdefFilePath = CompileVsTheme(themeName, themeId ?? ThemeIdFromName(themeName), fallbackId, colorCategories);
             try
             {
                 // Copy pkgdef to specified folder
@@ -76,6 +145,8 @@ namespace ThemeConverter
 
                 string destPkgdefFilePath = Path.Combine(pkgdefOutputPath, $"{themeName}.pkgdef");
                 File.Copy(tempPkgdefFilePath, destPkgdefFilePath, overwrite: true);
+
+                File.WriteAllLines(Path.Combine(pkgdefOutputPath, $"{themeName}.audit.txt"), AuditContrast(colorCategories));
 
                 return destPkgdefFilePath;
             }
@@ -91,18 +162,79 @@ namespace ThemeConverter
             ParseMapping.CheckDuplicateMapping(reportFunc);
         }
 
+        /// <summary>
+        /// Maps a VS Code theme type (the theme file's "type", or a package's "uiTheme") to the
+        /// Visual Studio theme that supplies every colour the converted theme leaves unset.
+        /// </summary>
+        public static Guid ResolveFallbackId(string? themeType)
+        {
+            switch (themeType?.ToLowerInvariant())
+            {
+                case null:
+                case "light":
+                case "vs":
+                case "hclight":
+                case "hc-light":
+                    return LightThemeId;
+                case "dark":
+                case "vs-dark":
+                case "hcdark":
+                case "hc-black":
+                    return DarkThemeId;
+                default:
+                    throw new ApplicationException($"Unrecognised theme type '{themeType}'.");
+            }
+        }
+
+        /// <summary>
+        /// Name-based (version 5) UUID for a theme, stable across conversions.
+        /// </summary>
+        public static Guid ThemeIdFromName(string themeName)
+        {
+            byte[] namespaceBytes = ThemeIdNamespace.ToByteArray();
+            SwapGuidByteOrder(namespaceBytes);
+
+            byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(themeName);
+            byte[] input = new byte[namespaceBytes.Length + nameBytes.Length];
+            namespaceBytes.CopyTo(input, 0);
+            nameBytes.CopyTo(input, namespaceBytes.Length);
+
+            byte[] hash;
+            using (var sha1 = System.Security.Cryptography.SHA1.Create())
+            {
+                hash = sha1.ComputeHash(input);
+            }
+
+            byte[] id = new byte[16];
+            Array.Copy(hash, id, 16);
+            id[6] = (byte)((id[6] & 0x0F) | 0x50);
+            id[8] = (byte)((id[8] & 0x3F) | 0x80);
+            SwapGuidByteOrder(id);
+            return new Guid(id);
+        }
+
+        // Guid.ToByteArray is little-endian in its first three fields; RFC 4122 hashes network order.
+        private static void SwapGuidByteOrder(byte[] guid)
+        {
+            Array.Reverse(guid, 0, 4);
+            Array.Reverse(guid, 4, 2);
+            Array.Reverse(guid, 6, 2);
+        }
+
         #region Compile VS Theme
 
         /// <summary>
         /// Generate the pkgdef from the theme.
         /// </summary>
         /// <param name="themeName">The name of theme.</param>
-        /// <param name="theme">The theme object from the json file.</param>
+        /// <param name="themeGuid">The id the theme is registered under.</param>
+        /// <param name="fallbackId">The built-in theme supplying unset colours.</param>
         /// <param name="colorCategories">Colors grouped by category.</param>
         /// <returns>Path to the generated pkgdef</returns>
         private static string CompileVsTheme(
            string themeName,
-           ThemeFileContract theme,
+           Guid themeGuid,
+           Guid fallbackId,
            Dictionary<string, Dictionary<string, SettingsContract>> colorCategories)
         {
             using (TempFileCollection tempFileCollection = new TempFileCollection())
@@ -112,17 +244,7 @@ namespace ThemeConverter
                 using (var writer = new StreamWriter(tempThemeFile))
                 {
                     writer.WriteLine($"<Themes>");
-
-                    Guid themeGuid = Guid.NewGuid();
-
-                    if (theme.Type == "dark")
-                    {
-                        writer.WriteLine($"    <Theme Name=\"{themeName}\" GUID=\"{themeGuid:B}\" FallbackId=\"{DarkThemeId:B}\">");
-                    }
-                    else
-                    {
-                        writer.WriteLine($"    <Theme Name=\"{themeName}\" GUID=\"{themeGuid:B}\" FallbackId=\"{LightThemeId:B}\">");
-                    }
+                    writer.WriteLine($"    <Theme Name=\"{themeName}\" GUID=\"{themeGuid:B}\" FallbackId=\"{fallbackId:B}\">");
 
                     foreach (var category in colorCategories)
                     {
@@ -288,6 +410,343 @@ namespace ThemeConverter
             }
 
             return colorValue != null;
+        }
+
+        /// <summary>
+        /// First colour in <paramref name="keys"/> that resolves to something visible.
+        /// </summary>
+        private static bool TryGetFirstColor(ThemeFileContract theme, JToken? keys, out string color)
+        {
+            color = string.Empty;
+            if (keys is not JArray array)
+            {
+                return false;
+            }
+
+            foreach (var key in array)
+            {
+                if (TryGetColorValue(theme, key.ToString(), out string? value) && ToArgb(value!).A != 0)
+                {
+                    color = value!;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Emits the Visual Studio 18 Fluent tokens described by ShellMappings.json. The shell draws
+        /// its chrome from these, and redirects the legacy Environment surface keys to them.
+        /// </summary>
+        private static void AddShellColors(ThemeFileContract theme, Dictionary<string, Dictionary<string, SettingsContract>> colorCategories)
+        {
+            foreach (var mapping in ShellMappings.Value.Properties())
+            {
+                string[] target = mapping.Name.Split('&');
+                if (target.Length != 2 || mapping.Value is not JObject spec)
+                {
+                    continue;
+                }
+
+                if (!TryGetFirstColor(theme, spec["from"], out string color))
+                {
+                    continue;
+                }
+
+                if (TryGetFirstColor(theme, spec["over"], out string baseColor))
+                {
+                    color = Composite(color, baseColor);
+                }
+
+                if (spec["mix"] is JObject mix)
+                {
+                    color = Mix(color, mix["with"]!.ToString(), mix["amount"]!.ToObject<double>());
+                }
+
+                if (spec["alpha"] is JToken alpha)
+                {
+                    var argb = ToArgb(color);
+                    color = FromArgb((alpha.ToObject<int>(), argb.R, argb.G, argb.B));
+                }
+
+                if (!colorCategories.TryGetValue(target[0], out var colors))
+                {
+                    colors = new Dictionary<string, SettingsContract>();
+                    colorCategories[target[0]] = colors;
+                }
+
+                colors[target[1]] = new SettingsContract { Background = color };
+            }
+        }
+
+        /// <summary>
+        /// Gives every syntax classification in SyntaxDefaults.json that the token mappings left unset
+        /// the colour VS Code would show: its scope resolved against the theme, else editor.foreground.
+        /// </summary>
+        private static void AddSyntaxDefaults(ThemeFileContract theme, Dictionary<string, Dictionary<string, SettingsContract>> colorCategories)
+        {
+            if (!TryGetColorValue(theme, "editor.foreground", out string? editorForeground))
+            {
+                return;
+            }
+
+            foreach (var mapping in SyntaxDefaults.Value.Properties())
+            {
+                string[] target = mapping.Name.Split('&');
+                if (target.Length != 2 || IsColorSet(colorCategories, target[0], target[1]))
+                {
+                    continue;
+                }
+
+                if (!colorCategories.TryGetValue(target[0], out var colors))
+                {
+                    colors = new Dictionary<string, SettingsContract>();
+                    colorCategories[target[0]] = colors;
+                }
+
+                colors[target[1]] = new SettingsContract { Foreground = MatchScope(theme, mapping.Value.ToString()) ?? editorForeground };
+            }
+        }
+
+        // Category names are aliases when they share a GUID (e.g. the "... MEF Items" categories).
+        private static bool IsColorSet(Dictionary<string, Dictionary<string, SettingsContract>> colorCategories, string category, string name)
+        {
+            string guid = CategoryGuids.Value[category];
+            foreach (var other in colorCategories)
+            {
+                if (string.Equals(CategoryGuids.Value[other.Key], guid, StringComparison.OrdinalIgnoreCase) &&
+                    other.Value.TryGetValue(name, out var entry) && (entry.Foreground is not null || entry.Background is not null))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Foreground a TextMate theme gives a token with scope stack <paramref name="scopePath"/>
+        /// (outermost first): the rule whose selector matches deepest wins, then the longest
+        /// matching selector, then the one naming more ancestors, then the later rule.
+        /// </summary>
+        internal static string? MatchScope(ThemeFileContract theme, string scopePath)
+        {
+            if (theme.TokenColors is null)
+            {
+                return null;
+            }
+
+            string[] path = scopePath.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            (int Depth, int Length, int Parts) best = (-1, -1, -1);
+            string? color = null;
+
+            static bool Matches(string selector, string scope) =>
+                scope == selector || scope.StartsWith(selector + ".", StringComparison.Ordinal);
+
+            foreach (var rule in theme.TokenColors)
+            {
+                if (rule.Settings?.Foreground is null)
+                {
+                    continue;
+                }
+
+                foreach (var scopeName in rule.ScopeNames)
+                {
+                    foreach (var selectorRaw in scopeName.Split(','))
+                    {
+                        string[] parts = selectorRaw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        // The last selector part must match the deepest possible element, and the
+                        // earlier parts must match ancestors in order.
+                        for (int depth = path.Length - 1; depth >= 0; depth--)
+                        {
+                            if (!Matches(parts[^1], path[depth]))
+                            {
+                                continue;
+                            }
+
+                            int next = depth - 1;
+                            bool ancestorsMatch = true;
+                            for (int p = parts.Length - 2; p >= 0 && ancestorsMatch; p--)
+                            {
+                                while (next >= 0 && !Matches(parts[p], path[next]))
+                                {
+                                    next--;
+                                }
+
+                                ancestorsMatch = next-- >= 0;
+                            }
+
+                            if (ancestorsMatch)
+                            {
+                                var rank = (depth, parts[^1].Length, parts.Length);
+                                if (rank.CompareTo(best) >= 0)
+                                {
+                                    best = rank;
+                                    color = rule.Settings.Foreground;
+                                }
+
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return color;
+        }
+
+        /// <summary>
+        /// Composites translucent Fonts &amp; Colors entries onto what they are drawn over.
+        /// </summary>
+        private static void FlattenFontAndColorCategories(ThemeFileContract theme, Dictionary<string, Dictionary<string, SettingsContract>> colorCategories)
+        {
+            foreach (var category in colorCategories)
+            {
+                if (!FontAndColorBases.TryGetValue(category.Key, out var baseKeys) ||
+                    !TryGetFirstColor(theme, new JArray(baseKeys), out string categoryBase))
+                {
+                    continue;
+                }
+
+                categoryBase = Composite(categoryBase, "#000000");
+
+                foreach (var name in new List<string>(category.Value.Keys))
+                {
+                    var entry = category.Value[name];
+                    string? background = entry.Background is null ? null : Composite(entry.Background, categoryBase);
+                    string? foreground = entry.Foreground is null ? null : Composite(entry.Foreground, background ?? categoryBase);
+
+                    // Entries can share one SettingsContract with a token rule, so replace rather than mutate.
+                    category.Value[name] = new SettingsContract { Foreground = foreground, Background = background };
+                }
+            }
+        }
+
+        /// <summary>
+        /// Lists emitted text/background pairs whose contrast falls below <see cref="MinimumContrast"/>,
+        /// including pairs set within one Fonts &amp; Colors entry.
+        /// </summary>
+        private static List<string> AuditContrast(Dictionary<string, Dictionary<string, SettingsContract>> colorCategories)
+        {
+            var report = new List<string>();
+
+            string? Lookup(string qualifiedName)
+            {
+                string[] parts = qualifiedName.Split('&');
+                return colorCategories.TryGetValue(parts[0], out var colors) && colors.TryGetValue(parts[1], out var entry)
+                    ? entry.Background ?? entry.Foreground
+                    : null;
+            }
+
+            void Check(string text, string textName, string background, string backgroundName)
+            {
+                string opaqueBackground = Composite(background, "#000000");
+                double ratio = ContrastRatio(Composite(text, opaqueBackground), opaqueBackground);
+                if (ratio < MinimumContrast)
+                {
+                    report.Add(string.Format(CultureInfo.InvariantCulture, "{0:0.00}:1  {1} {2} on {3} {4}",
+                        ratio, textName, ReviseColor(text), backgroundName, ReviseColor(background)));
+                }
+            }
+
+            foreach (var (textName, backgroundName) in AuditPairs)
+            {
+                string? text = Lookup(textName);
+                string? background = Lookup(backgroundName);
+                if (text is not null && background is not null)
+                {
+                    Check(text, textName, background, backgroundName);
+                }
+            }
+
+            foreach (var category in colorCategories)
+            {
+                if (!FontAndColorBases.ContainsKey(category.Key))
+                {
+                    continue;
+                }
+
+                foreach (var entry in category.Value)
+                {
+                    if (entry.Value.Foreground is not null && entry.Value.Background is not null)
+                    {
+                        Check(entry.Value.Foreground, $"{category.Key}&{entry.Key}&Foreground",
+                              entry.Value.Background, $"{category.Key}&{entry.Key}&Background");
+                    }
+                }
+            }
+
+            report.Sort(StringComparer.Ordinal);
+            report.Insert(0, report.Count == 0
+                ? "No text/background pair is below the minimum contrast."
+                : string.Format(CultureInfo.InvariantCulture, "{0} pair(s) below {1}:1", report.Count, MinimumContrast));
+            return report;
+        }
+
+        private static (int A, int R, int G, int B) ToArgb(string color)
+        {
+            string argb = ReviseColor(color);
+            if (argb.Length != 8)
+            {
+                throw new ApplicationException($"Unrecognised colour '{color}'.");
+            }
+
+            int Channel(int index) => System.Convert.ToInt32(argb.Substring(index, 2), 16);
+            return (Channel(0), Channel(2), Channel(4), Channel(6));
+        }
+
+        // VS Code notation (#RRGGBBAA), which the writer converts with ReviseColor.
+        private static string FromArgb((int A, int R, int G, int B) c)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "#{0:X2}{1:X2}{2:X2}{3:X2}", c.R, c.G, c.B, c.A);
+        }
+
+        private static string Composite(string overlay, string baseColor)
+        {
+            var o = ToArgb(overlay);
+            if (o.A == 255)
+            {
+                return FromArgb(o);
+            }
+
+            var b = ToArgb(baseColor);
+            double a = o.A / 255.0;
+            int Blend(int top, int bottom) => (int)Math.Round(a * top + (1 - a) * bottom);
+            return FromArgb((255, Blend(o.R, b.R), Blend(o.G, b.G), Blend(o.B, b.B)));
+        }
+
+        private static string Mix(string color, string with, double amount)
+        {
+            var c = ToArgb(color);
+            var w = ToArgb(with);
+            int Blend(int from, int to) => (int)Math.Round((1 - amount) * from + amount * to);
+            return FromArgb((c.A, Blend(c.R, w.R), Blend(c.G, w.G), Blend(c.B, w.B)));
+        }
+
+        // WCAG 2 contrast ratio of two opaque colours.
+        private static double ContrastRatio(string first, string second)
+        {
+            static double Luminance(string color)
+            {
+                var c = ToArgb(color);
+                static double Linear(int channel)
+                {
+                    double s = channel / 255.0;
+                    return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+                }
+
+                return 0.2126 * Linear(c.R) + 0.7152 * Linear(c.G) + 0.0722 * Linear(c.B);
+            }
+
+            double l1 = Luminance(first);
+            double l2 = Luminance(second);
+            return (Math.Max(l1, l2) + 0.05) / (Math.Min(l1, l2) + 0.05);
         }
 
         /// <summary>

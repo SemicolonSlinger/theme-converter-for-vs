@@ -103,6 +103,23 @@ namespace ThemeConverter
         {
             if (MappedVSTokens.Count > 0)
             {
+                // Fluent tokens are mapped in ShellMappings.json and always written to the Background slot.
+                foreach (var shellToken in JObject.Parse(File.ReadAllText("ShellMappings.json")).Properties())
+                {
+                    if (shellToken.Name.Contains('&'))
+                    {
+                        MappedVSTokens.Add(shellToken.Name + "&Background");
+                    }
+                }
+
+                foreach (var syntaxToken in JObject.Parse(File.ReadAllText("SyntaxDefaults.json")).Properties())
+                {
+                    if (syntaxToken.Name.Contains('&'))
+                    {
+                        MappedVSTokens.Add(syntaxToken.Name + "&Foreground");
+                    }
+                }
+
                 var text = File.ReadAllText("VSTokens.json");
                 var jobject = JArray.Parse(text);
                 var availableTokens = jobject.ToObject<List<string>>();

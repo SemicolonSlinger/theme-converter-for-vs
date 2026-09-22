@@ -1,0 +1,50 @@
+<Project>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+
+  <!-- Packages one converted theme (.pkgdef) and its editor component as a per-user VSIX. Driven by
+       tools\build-theme-vsix.ps1, which supplies ThemeName, ThemePkgdef, ThemeManifest,
+       ThemeIdentity and optionally ThemeLicense. Needs the "Visual Studio extension development"
+       workload; `dotnet build` cannot produce a VSIX. -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ThemeVsix.$(ThemeName)</AssemblyName>
+    <RootNamespace>ThemeVsix</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+
+    <CreateVsixContainer>true</CreateVsixContainer>
+    <GeneratePkgDefFile>false</GeneratePkgDefFile>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
+    <DeployExtension>false</DeployExtension>
+    <TargetVsixContainerName>$(ThemeName).vsix</TargetVsixContainerName>
+  </PropertyGroup>
+
+  <!-- Visual Studio supplies these assemblies at run time; a newer copy in the VSIX breaks loading. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.*" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.*" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="ThemeEditor.cs" />
+    <Compile Include="$(ThemeIdentity)" Link="ThemeIdentity.cs" />
+    <None Include="$(ThemeManifest)" Link="source.extension.vsixmanifest" />
+    <Content Include="$(ThemePkgdef)" Link="$(ThemeName).pkgdef" IncludeInVSIX="true" />
+    <!-- The script stages the file as LICENSE.txt; VSSDK needs both that name and the link to put it at the root. -->
+    <Content Include="$(ThemeLicense)" Link="LICENSE.txt" IncludeInVSIX="true" Condition="'$(ThemeLicense)' != ''" />
+  </ItemGroup>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+  <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="'$(VSToolsPath)' != ''" />
+
+</Project>

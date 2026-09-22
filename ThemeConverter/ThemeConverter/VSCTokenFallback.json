@@ -29,5 +29,8 @@
   "tab.hoverForeground": "tab.inactiveForeground",
   "variable.other.object.property.cs": "entity.name.variable.property.cs",
   "terminal.background": "panel.background",
-  "terminal.foreground": "foreground"
+  "terminal.foreground": "foreground",
+  "selection.background": "editor.selectionBackground",
+  "editor.wordHighlightBackground": "editor.selectionHighlightBackground",
+  "editor.wordHighlightStrongBackground": "editor.wordHighlightBackground"
 }
