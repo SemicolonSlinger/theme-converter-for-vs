@@ -95,15 +95,12 @@ namespace ThemeVsix
         [Order(After = PredefinedAdornmentLayers.Selection, Before = PredefinedAdornmentLayers.Text)]
         internal AdornmentLayerDefinition Layer = null;
 
-        [Import]
-        internal IClassificationFormatMapService FormatMaps = null;
-
         public void TextViewCreated(IWpfTextView view)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             ThemeEditorColours.EnsureLoaded();
             new SelectionPainter(view);
-            new CaretPainter(view, FormatMaps.GetClassificationFormatMap(view));
+            new CaretPainter(view);
         }
     }
 
@@ -192,7 +189,12 @@ namespace ThemeVsix
 
     // Adds the theme's caret to Visual Studio's own "Caret" layer, above Visual Studio's caret, so it
     // blinks with it: the blink toggles that layer's opacity. A block caret (overwrite mode, or a wide
-    // caret) also redraws the character under it in the theme's caret text colour, as VS Code does.
+    // caret) also redraws the text under it in the theme's caret text colour, as VS Code does. That
+    // text is Visual Studio's own glyph runs for the line, placed as Visual Studio places them. Text
+    // drawn any other way lands on other pixels, so the character under the caret moved each time the
+    // caret blinked: a FormattedText outline sat 1 px low at 120% zoom (VS 18.10), because the public
+    // ITextViewLine.Baseline is rounded up and an outline is not hinted or pixel-snapped as glyphs are,
+    // and even the character formatted on its own snaps its origin differently at fractional zoom.
     internal sealed class CaretPainter
     {
         private const string Tag = "ThemeVsix.Caret";
@@ -200,12 +202,10 @@ namespace ThemeVsix
         private readonly IWpfTextView view;
         private readonly IAdornmentLayer layer;
         private readonly IMultiSelectionBroker broker;
-        private readonly IClassificationFormatMap formatMap;
 
-        public CaretPainter(IWpfTextView view, IClassificationFormatMap formatMap)
+        public CaretPainter(IWpfTextView view)
         {
             this.view = view;
-            this.formatMap = formatMap;
             layer = view.GetAdornmentLayer(PredefinedAdornmentLayers.Caret);
             broker = view.GetMultiSelectionBroker();
 
@@ -267,33 +267,101 @@ namespace ThemeVsix
 
             // Text-relative adornments need a visual span; Visual Studio anchors its caret the same way.
             var anchor = new SnapshotSpan(position, 0);
-            Add(anchor, new RectangleGeometry(rect), ThemeEditorColours.Caret);
+            Add(anchor, new Path { Data = new RectangleGeometry(rect), Fill = ThemeEditorColours.Caret });
 
             ITextViewLine line = properties.ContainingTextViewLine;
             if (line == null || insertion.IsInVirtualSpace || position >= line.End) return;
-
-            string character = System.Globalization.StringInfo.GetNextTextElement(
-                position.Snapshot.GetText(position.Position, Math.Min(2, line.End.Position - position.Position)));
-            if (character.Length == 0 || char.IsWhiteSpace(character[0])) return;
 
             // Only a caret as wide as the character is a block; a thin caret leaves the glyph alone.
             TextBounds glyph = line.GetCharacterBounds(position);
             if (bounds.Width < glyph.Width * 0.75) return;
 
-            var text = formatMap.DefaultTextProperties;
-            var formatted = new FormattedText(character,
-                System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight,
-                text.Typeface, text.FontRenderingEmSize, ThemeEditorColours.CaretText,
-                VisualTreeHelper.GetDpi(view.VisualElement).PixelsPerDip);
-            var origin = new System.Windows.Point(glyph.Left, line.TextTop + line.Baseline - formatted.Baseline);
-            Add(anchor, formatted.BuildGeometry(origin), ThemeEditorColours.CaretText);
+            // Whatever Visual Studio drew inside the block, a neighbour's overhang included, since the
+            // block covers it too.
+            Drawing text = LineText(line as IWpfTextViewLine, rect);
+            if (text != null) Add(anchor, new CaretGlyphs(text, rect, line.LineTransform.VerticalScale, line.TextTop));
         }
 
-        private void Add(SnapshotSpan anchor, Geometry geometry, Brush brush)
+        // The line's text as Visual Studio draws it (FormattedLine.RenderedLineVisual.RenderText, VS
+        // 18.10), in line coordinates: each WPF TextLine at the running left edge, its baseline on the
+        // line's. Only the TextLines that reach the block are replayed.
+        private Drawing LineText(IWpfTextViewLine line, System.Windows.Rect block)
         {
-            var path = new Path { Data = geometry, Fill = brush, IsHitTestVisible = false };
-            System.Windows.Controls.Panel.SetZIndex(path, 1);
-            layer.AddAdornment(AdornmentPositioningBehavior.TextRelative, anchor, Tag, path, null);
+            IFormattedLineSource source = view.FormattedLineSource;
+            if (line == null || source == null) return null;
+
+            double baseline = UnscaledBaseline(line, source.UseDisplayMode);
+            // The public Baseline is Visual Studio's own baseline scaled and rounded up. When an
+            // intra-text adornment set that baseline the runs alone do not give it, and a guess would
+            // move the glyphs off Visual Studio's, so the block is left plain.
+            if (Math.Ceiling(baseline * line.LineTransform.VerticalScale) != line.Baseline) return null;
+
+            var drawn = new DrawingGroup();
+            using (DrawingContext context = drawn.Open())
+            {
+                double left = line.Left;
+                foreach (var textLine in line.TextLines)
+                {
+                    double right = left + textLine.WidthIncludingTrailingWhitespace;
+                    if (right > block.Left && left < block.Right)
+                        textLine.Draw(context, new System.Windows.Point(left, baseline - textLine.Baseline),
+                                      System.Windows.Media.TextFormatting.InvertAxes.None);
+                    left = right;
+                }
+            }
+
+            DrawingGroup text = Recolour(drawn, ThemeEditorColours.CaretText);
+            text.Freeze();
+            return text;
+        }
+
+        // The line's baseline before any line transform, measured as TextInfoCache.GetTextInfo measures
+        // each run's font (VS 18.10): the highest baseline of a FormattedText "Xg " among its runs.
+        private static double UnscaledBaseline(IWpfTextViewLine line, bool displayMode)
+        {
+            var measured = new HashSet<System.Windows.Media.TextFormatting.TextRunProperties>();
+            double baseline = 0;
+            foreach (var textLine in line.TextLines)
+            {
+                foreach (var span in textLine.GetTextRunSpans())
+                {
+                    if (!(span.Value is System.Windows.Media.TextFormatting.TextCharacters run) || !measured.Add(run.Properties))
+                        continue;
+                    var font = run.Properties;
+                    var sample = new FormattedText("Xg ", font.CultureInfo, System.Windows.FlowDirection.LeftToRight,
+                        font.Typeface, font.FontRenderingEmSize, Brushes.Black, null,
+                        displayMode ? TextFormattingMode.Display : TextFormattingMode.Ideal, font.PixelsPerDip);
+                    baseline = Math.Max(baseline, sample.Baseline);
+                }
+            }
+            return baseline;
+        }
+
+        // Visual Studio's glyph runs in the caret text colour. Run backgrounds, decorations and
+        // embedded objects are dropped. DrawingGroup.Open returns its drawings frozen, so each run gets
+        // a new drawing around the same GlyphRun.
+        private static DrawingGroup Recolour(DrawingGroup drawn, Brush brush)
+        {
+            var result = new DrawingGroup
+            {
+                Transform = drawn.Transform,
+                ClipGeometry = drawn.ClipGeometry,
+                Opacity = drawn.Opacity,
+                GuidelineSet = drawn.GuidelineSet,
+            };
+            foreach (Drawing child in drawn.Children)
+            {
+                if (child is GlyphRunDrawing run) result.Children.Add(new GlyphRunDrawing(brush, run.GlyphRun));
+                else if (child is DrawingGroup group) result.Children.Add(Recolour(group, brush));
+            }
+            return result;
+        }
+
+        private void Add(SnapshotSpan anchor, System.Windows.UIElement element)
+        {
+            element.IsHitTestVisible = false;
+            System.Windows.Controls.Panel.SetZIndex(element, 1);
+            layer.AddAdornment(AdornmentPositioningBehavior.TextRelative, anchor, Tag, element, null);
         }
 
         private void OnClosed(object sender, EventArgs e)
@@ -305,6 +373,33 @@ namespace ThemeVsix
             view.Options.OptionChanged -= OnOptionChanged;
             ThemeEditorColours.Changed -= Redraw;
             view.Closed -= OnClosed;
+        }
+    }
+
+    // Draws replayed line text clipped to the caret block, under the transform Visual Studio gives each
+    // rendered line (RenderedLineVisual.SetTransform, VS 18.10), so its glyphs land on Visual Studio's.
+    internal sealed class CaretGlyphs : System.Windows.UIElement
+    {
+        private readonly Drawing text;
+        private readonly Geometry clip;
+        private readonly Transform toView;
+
+        public CaretGlyphs(Drawing text, System.Windows.Rect block, double verticalScale, double textTop)
+        {
+            this.text = text;
+            clip = new RectangleGeometry(block);
+            clip.Freeze();
+            toView = new MatrixTransform(1, 0, 0, verticalScale, 0, textTop);
+            toView.Freeze();
+        }
+
+        protected override void OnRender(DrawingContext drawingContext)
+        {
+            drawingContext.PushClip(clip);
+            drawingContext.PushTransform(toView);
+            drawingContext.DrawDrawing(text);
+            drawingContext.Pop();
+            drawingContext.Pop();
         }
     }
 
